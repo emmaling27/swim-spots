@@ -24,3 +24,11 @@ a {
     background: black;
   }
 }
+#map {
+  height: 100%;
+  visibility: visible;
+}
+#__next {
+  height: 500px;
+  visibility: visible;
+}
