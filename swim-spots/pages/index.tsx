@@ -1,8 +1,12 @@
 import { Status, Wrapper } from "@googlemaps/react-wrapper";
 import type { NextPage } from "next";
 import {
+  Children,
+  cloneElement,
   Dispatch,
   FormEvent,
+  isValidElement,
+  ReactNode,
   SetStateAction,
   useEffect,
   useRef,
@@ -34,13 +38,12 @@ const render = (status: Status) => {
   }
 };
 
-function Map({
-  map,
-  setMap,
-}: {
+interface MapProps extends google.maps.MapOptions {
   map: google.maps.Map | undefined;
   setMap: Dispatch<SetStateAction<google.maps.Map | undefined>>;
-}) {
+  children?: ReactNode;
+}
+function Map({ map, setMap, children, ...options }: MapProps) {
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -54,18 +57,56 @@ function Map({
     }
   }, [map, setMap, ref]);
 
-  return <div ref={ref} id="map" />;
+  return (
+    <>
+      <div ref={ref} id="map" />
+      {Children.map(children, (child) => {
+        if (isValidElement(child)) {
+          // set the map prop on the child component
+          return cloneElement(child, { map });
+        }
+      })}
+    </>
+  );
+}
+
+interface MarkerProps extends google.maps.MarkerOptions {
+  id: string;
+  marker: google.maps.Marker | undefined;
+  setMarker: Dispatch<SetStateAction<google.maps.Marker | undefined>>;
+}
+function Marker({ id, marker, setMarker, ...options }: MarkerProps) {
+  useEffect(() => {
+    if (!marker) {
+      setMarker(new google.maps.Marker());
+    }
+
+    // remove marker from map on unmount
+    return () => {
+      if (marker) {
+        marker.setMap(null);
+      }
+    };
+  }, [marker, setMarker]);
+
+  useEffect(() => {
+    if (marker) {
+      marker.setOptions(options);
+    }
+  }, [marker, options]);
+
+  return null;
 }
 
 interface AddressInputProps {
   map: google.maps.Map | undefined;
+  marker: google.maps.Marker | undefined;
 }
 
-function AddressInput({ map }: AddressInputProps) {
+function AddressInput({ map, marker }: AddressInputProps) {
   const [address, setAddress] = useState("");
   const geocoder = new google.maps.Geocoder();
-  const codeAddress = (event: FormEvent) => {
-    event.preventDefault();
+  const geocode = (showMarker: boolean) => {
     geocoder.geocode({ address: address }, function (results, status) {
       if (status == "OK") {
         if (results) {
@@ -77,6 +118,9 @@ function AddressInput({ map }: AddressInputProps) {
           if (map) {
             map.setCenter(center);
           }
+          if (marker && showMarker) {
+            marker.setPosition(center);
+          }
         } else {
           throw Error("Results from geocoding request was null");
         }
@@ -87,6 +131,15 @@ function AddressInput({ map }: AddressInputProps) {
       }
     });
   };
+  const codeAddress = (event: FormEvent) => {
+    event.preventDefault();
+    geocode(false);
+  };
+
+  const addMarker = async (event: FormEvent) => {
+    event.preventDefault();
+    geocode(true);
+  };
   return (
     <div>
       <TextField
@@ -95,8 +148,11 @@ function AddressInput({ map }: AddressInputProps) {
         value={address}
         onChange={(event) => setAddress(event.target.value)}
       />
-      <Button onClick={codeAddress} value="Search" disabled={!address}>
+      <Button onClick={codeAddress} disabled={!address}>
         Search
+      </Button>
+      <Button onClick={addMarker} disabled={!address}>
+        Add a spot
       </Button>
     </div>
   );
@@ -104,11 +160,14 @@ function AddressInput({ map }: AddressInputProps) {
 
 const MyApp = () => {
   const [map, setMap] = useState<google.maps.Map>();
+  const [marker, setMarker] = useState<google.maps.Marker>();
   return (
     <Wrapper apiKey={GOOGLE_API_KEY} render={render}>
       <h1>Swim Spots</h1>
-      {!!map && <AddressInput map={map} />}
-      <Map map={map} setMap={setMap} />
+      {!!map && <AddressInput map={map} marker={marker} />}
+      <Map map={map} setMap={setMap}>
+        <Marker id="marker" marker={marker} setMarker={setMarker} />
+      </Map>
     </Wrapper>
   );
 };
